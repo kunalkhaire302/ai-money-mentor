@@ -302,10 +302,10 @@ This platform enforces **SEBI (Securities and Exchange Board of India)** *"Not I
 
 | Role | Name |
 |------|------|
-| 🧠 ML & Backend | Kunal Khaire |
-| 🎨 Frontend & UI/UX | Kunal Khaire |
-| 📊 Data & Finance Domain | Kunal Khaire |
-| 🚀 DevOps & Integration | Kunal Khaire |
+| 🧠 ML & Backend | *[Your Name]* |
+| 🎨 Frontend & UI/UX | *[Teammate Name]* |
+| 📊 Data & Finance Domain | *[Teammate Name]* |
+| 🚀 DevOps & Integration | *[Teammate Name]* |
 
 </div>
 
