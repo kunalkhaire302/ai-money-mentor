@@ -303,27 +303,29 @@ async def analyze_mf_statement(file: UploadFile = File(...)):
         content = await file.read()
         pdf = pdfplumber.open(io.BytesIO(content))
         
-        extracted_text = ""
-        tables = []
+        extracted_text_parts: list = []
+        tables: list = []
         for page in pdf.pages:
             text = page.extract_text()
             if text:
-                extracted_text += text + "\n"
+                extracted_text_parts.append(str(text))
             page_tables = page.extract_tables()
             if page_tables:
                 tables.extend(page_tables)
         
+        extracted_text = "\n".join(extracted_text_parts)
+        
         pdf.close()
 
         # Parse fund data from tables (simplified)
-        funds = []
+        funds: list = []
         if tables:
-            for table in tables[:10]:
+            for table in tables[:10]:  # type: ignore
                 for row in table:
                     if row and len(row) >= 3:
                         funds.append({
-                            'name': str(row[0] or '').strip(),
-                            'value': str(row[-1] or '').strip(),
+                            'name': str(row[0] or '').strip(),  # type: ignore
+                            'value': str(row[-1] or '').strip(),  # type: ignore
                         })
 
         return {
@@ -331,7 +333,7 @@ async def analyze_mf_statement(file: UploadFile = File(...)):
             'pages_parsed': len(pdf.pages) if hasattr(pdf, 'pages') else 0,
             'text_length': len(extracted_text),
             'funds_found': len(funds),
-            'funds': funds[:20],
+            'funds': funds[:20],  # type: ignore
             'raw_text_preview': extracted_text[:500],
             'analysis': {
                 'note': 'Full XIRR and overlap analysis requires structured CAMS/KFintech statement format.',

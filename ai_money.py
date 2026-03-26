@@ -10,7 +10,7 @@ Original file is located at
 # ==========================================
 # STEP 1: Install Dependencies & Setup
 # ==========================================
-!pip install xgboost shap kaggle optuna scikit-learn pandas numpy matplotlib seaborn plotly -q
+# !pip install xgboost shap kaggle optuna scikit-learn pandas numpy matplotlib seaborn plotly -q
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -22,19 +22,19 @@ USE_KAGGLE_API = False  # Set to True if you have kaggle.json
 
 if USE_KAGGLE_API:
     # Upload kaggle.json via Colab Files panel, then run:
-    from google.colab import files
-    print('Upload your kaggle.json file:')
-    uploaded = files.upload()
+    # from google.colab import files
+    # print('Upload your kaggle.json file:')
+    # uploaded = files.upload()
 
     os.makedirs('/root/.config/kaggle', exist_ok=True)
-    !cp kaggle.json /root/.config/kaggle/
-    !chmod 600 /root/.config/kaggle/kaggle.json
+    # !cp kaggle.json /root/.config/kaggle/
+    # !chmod 600 /root/.config/kaggle/kaggle.json
 
     # Download primary dataset: Financial Risk for Loan Approval
-    !kaggle datasets download -d lorenzozoppelletto/financial-risk-for-loan-approval --unzip -p /content/data/
+    # !kaggle datasets download -d lorenzozoppelletto/financial-risk-for-loan-approval --unzip -p /content/data/
 
     # Download secondary dataset: Personal Finance
-    !kaggle datasets download -d burak3ergun/loan-data-set --unzip -p /content/data/
+    # !kaggle datasets download -d burak3ergun/loan-data-set --unzip -p /content/data/
 
     print('✅ Kaggle datasets downloaded')
 else:
@@ -514,12 +514,12 @@ class FinancialHealthScorer:
         X_input = self.preprocess(user_input)
 
         score = float(self.regressor.predict(X_input)[0])
-        score = round(max(0, min(100, score)), 1)
+        score = round(max(0.0, min(100.0, score)), 1)  # type: ignore
 
         tier_proba = self.classifier.predict_proba(X_input)[0]
         tier_idx = tier_proba.argmax()
         tier = self.tier_order[tier_idx]
-        tier_probabilities = {t: round(float(p) * 100, 1) for t, p in zip(self.tier_order, tier_proba)}
+        tier_probabilities = {t: round(float(p) * 100.0, 1) for t, p in zip(self.tier_order, tier_proba)}
 
         shap_vals = self.explainer.shap_values(X_input)[0]
         shap_df = pd.DataFrame({
@@ -561,7 +561,7 @@ class FinancialHealthScorer:
             recs.append(f'Increase savings rate from {sr*100:.0f}% → 30% of income')
         if not recs:
             recs.append('Great financial health! Consider increasing equity allocation.')
-        return recs[:3]
+        return recs[:3]  # type: ignore
 
 # Demo: Scoring a sample user profile
 scorer = FinancialHealthScorer(
