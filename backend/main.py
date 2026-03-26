@@ -99,6 +99,44 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()
     logger.info("⏰ APScheduler shutdown clean.")
 
+app = FastAPI(
+    title="AI Money Mentor API",
+    description="ML-powered financial health scoring, tax optimization, and FIRE planning for the Indian market.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# Rate Limiter Initialization
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    return response
+
+# Include advanced routers
+from advanced import router as advanced_router
+app.include_router(advanced_router)
+
+# ─── Auth Endpoints ──────────────────────────────────────────────────────────────
+
 @app.post("/auth/register")
 async def register_user(user_data: dict, db: AsyncSession = Depends(get_db)):
     username = user_data.get("username")
@@ -134,48 +172,6 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
         
     access_token = auth.create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer"}
-
-
-app = FastAPI(
-    title="AI Money Mentor API",
-    description="ML-powered financial health scoring, tax optimization, and FIRE planning for the Indian market.",
-    version="1.0.0",
-    lifespan=lifespan,
-)
-
-# Rate Limiter Initialization
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "Content-Type"],
-)
-
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Content-Security-Policy"] = "default-src 'self'"
-    return response
-
-
-# ─── Pydantic Models ────────────────────────────────────────────────────────────
-
-from advanced import router as advanced_router
-app.include_router(advanced_router)
-
-from advanced import router as advanced_router
-app.include_router(advanced_router)
 
 class FinancialProfileInput(BaseModel):
     age: int = Field(..., ge=18, le=75)
