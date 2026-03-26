@@ -23,8 +23,7 @@ import {
   Award,
   XCircle,
 } from "lucide-react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://ai-money-mentor-n5kt.onrender.com";
+import { apiFetch } from "@/lib/api";
 
 interface Milestone {
   age: number;
@@ -97,13 +96,10 @@ export default function FirePlannerPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/fire-planner`, {
+      const data = await apiFetch("/api/fire-planner", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-      const data = await res.json();
       setResult(data);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
