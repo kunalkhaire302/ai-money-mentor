@@ -110,9 +110,11 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
-if not ALLOWED_ORIGINS or ALLOWED_ORIGINS == [""]:
-    ALLOWED_ORIGINS = ["http://localhost:3000", "https://ai-money-mentor-frontend.onrender.com", "https://*.onrender.com"]
+_env_origins = os.getenv("ALLOWED_ORIGINS")
+if _env_origins:
+    ALLOWED_ORIGINS = [o.strip() for o in _env_origins.split(",") if o.strip()]
+else:
+    ALLOWED_ORIGINS = ["http://localhost:3000", "https://ai-money-mentor-1.onrender.com", "https://*.onrender.com"]
 
 app.add_middleware(
     CORSMiddleware,
