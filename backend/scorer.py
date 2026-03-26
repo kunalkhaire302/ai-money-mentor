@@ -208,18 +208,39 @@ class FinancialHealthScorer:
         """Score a user's financial health and return comprehensive results."""
         X_input = self.preprocess(user_input)
 
-        # Regression score
-        score = float(self.regressor.predict(X_input)[0])
-        score = round(max(0, min(100, score)), 1)
+        # Compute score from sub-scores (matching training ground-truth formula)
+        sub_scores = self._compute_sub_scores(user_input)
+        score = round((
+            0.20 * sub_scores['Savings'] +
+            0.20 * sub_scores['Emergency Fund'] +
+            0.15 * sub_scores['Debt Management'] +
+            0.15 * sub_scores['Insurance'] +
+            0.15 * sub_scores['Diversification'] +
+            0.15 * sub_scores['Retirement']
+        ), 1)
+        score = max(0, min(100, score))
 
-        # Classification tier
-        tier_proba = self.classifier.predict_proba(X_input)[0]
-        tier_idx = tier_proba.argmax()
-        tier = self.tier_order[tier_idx]
-        tier_probabilities = {
-            t: round(float(p) * 100, 1)
-            for t, p in zip(self.tier_order, tier_proba)
-        }
+        # Derive tier from score (matching training binning)
+        if score < 35:
+            tier = "Critical"
+        elif score < 55:
+            tier = "Poor"
+        elif score < 70:
+            tier = "Fair"
+        elif score < 85:
+            tier = "Good"
+        else:
+            tier = "Excellent"
+
+        # Approximate tier probabilities based on score distance to bin centers
+        tier_bins = {"Critical": 17.5, "Poor": 45, "Fair": 62.5, "Good": 77.5, "Excellent": 92.5}
+        tier_probabilities = {}
+        for t, center in tier_bins.items():
+            dist = abs(score - center)
+            tier_probabilities[t] = round(max(0, 100 - dist * 2), 1)
+        # Normalize
+        total = sum(tier_probabilities.values())
+        tier_probabilities = {t: round(p / total * 100, 1) for t, p in tier_probabilities.items()}
 
         # SHAP explainability
         shap_vals = self.explainer.shap_values(X_input)[0]
@@ -244,9 +265,6 @@ class FinancialHealthScorer:
             }
             for _, row in shap_df[shap_df['shap_value'] < 0].head(5).iterrows()
         ]
-
-        # Sub-scores for radar chart
-        sub_scores = self._compute_sub_scores(user_input)
 
         # Recommendations
         recommendations = self._generate_recommendations(user_input, shap_df)
