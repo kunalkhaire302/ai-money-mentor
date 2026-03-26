@@ -1,8 +1,9 @@
-from fastapi import APIRouter, File, UploadFile, BackgroundTasks
+from fastapi import APIRouter, File, UploadFile, BackgroundTasks, Depends, Request
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 import random
 import logging
+import auth
 
 logger = logging.getLogger("ai_money_mentor.advanced")
 router = APIRouter()
@@ -64,7 +65,7 @@ class RPGEngine:
         )
 
 @router.post("/api/gamification")
-async def get_progression(state: UserFinancialState):
+async def get_progression(state: UserFinancialState, current_user: str = Depends(auth.get_current_user)):
     """Calculate user's RPG level and unlockable badges."""
     return RPGEngine.calculate_progression(state.model_dump())
 
@@ -72,7 +73,7 @@ async def get_progression(state: UserFinancialState):
 # ─── 2. Voice-Driven Conversational Mentor (Speech Emotion Recognition) ────────
 
 @router.post("/api/voice-chat")
-async def voice_chat_endpoint(audio: UploadFile = File(...)):
+async def voice_chat_endpoint(audio: UploadFile = File(...), current_user: str = Depends(auth.get_current_user)):
     """Receives audio buffer, performs SER, and routes to LangGraph."""
     
     # 1. Mock Deep Learning SER Pipeline
@@ -146,7 +147,7 @@ def push_whatsapp_summary(user_id: str, message: str):
     """Simulates Celery background task pushing message to Twilio/Meta API."""
     logger.info(f"📱 [WhatsApp to {user_id}]: {message}")
 
-@router.post("/api/whatsapp-bot")
+@router.post("/api/whatsapp-bot", dependencies=[Depends(auth.verify_twilio_webhook)])
 async def whatsapp_webhook(payload: WhatsAppIncoming, background_tasks: BackgroundTasks):
     """Webhook for WhatsApp Business API."""
     

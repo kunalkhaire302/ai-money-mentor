@@ -9,9 +9,38 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
+from database import engine, Base, get_db
+from models_db import UserDB
+import auth
+
+# Load environment variables
+load_dotenv()
+
+# Startup Secrets Validation (Fail-Fast)
+REQUIRED_ENV_VARS = [
+    "JWT_SECRET_KEY",
+    "LLM_API_KEY",
+    "TWILIO_AUTH_TOKEN", 
+    "WHATSAPP_TOKEN",
+    "WEBHOOK_SECRET"
+]
+
+missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+if missing_vars:
+    # Temporarily bypass during local build generation if needed, but raise heavily.
+    # In a full strict production, we could raise RuntimeError, but since the user
+    # might not have set them yet during this deployment phase, we just log a massive warning.
+    # Wait, the prompt specifically says: "raise a clear error if any required env var is missing"
+    raise RuntimeError(f"🚨 FATAL: Missing extremely critical Environment Variables: {', '.join(missing_vars)}")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ai_money_mentor")
@@ -30,6 +59,10 @@ scorer = None
 async def lifespan(app: FastAPI):
     """Train models on startup if they don't exist, then load the scorer."""
     global scorer
+    
+    # Initialize SQLite Database
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
     if not MODEL_DIR.exists() or not (MODEL_DIR / "regressor.json").exists():
         logger.info("🏋️ Model artifacts not found. Training from synthetic data...")
@@ -39,7 +72,43 @@ async def lifespan(app: FastAPI):
     logger.info("📦 Loading FinancialHealthScorer...")
     from scorer import FinancialHealthScorer
     scorer = FinancialHealthScorer(REG_PATH, CLF_PATH, META_PATH)
-    logger.info("✅ Scorer loaded. API is ready!")
+    logger.info("✅ Scorer loaded. API is ready!")# ─── Auth Endpoints ──────────────────────────────────────────────────────────────
+
+@app.post("/auth/register")
+async def register_user(user_data: dict, db: AsyncSession = Depends(get_db)):
+    username = user_data.get("username")
+    password = user_data.get("password")
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Username and password required")
+        
+    query = select(UserDB).where(UserDB.username == username)
+    result = await db.execute(query)
+    if result.scalars().first():
+        raise HTTPException(status_code=400, detail="Username already registered")
+        
+    hashed_password = auth.get_password_hash(password)
+    new_user = UserDB(username=username, hashed_password=hashed_password)
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+    
+    return {"message": "User registered successfully"}
+
+@app.post("/auth/token")
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+    query = select(UserDB).where(UserDB.username == form_data.username)
+    result = await db.execute(query)
+    user = result.scalars().first()
+    
+    if not user or not auth.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    access_token = auth.create_access_token(data={"sub": user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
     
     yield
     
@@ -139,7 +208,7 @@ async def root():
 
 
 @app.post("/api/health-score")
-async def get_health_score(request: HealthScoreRequest):
+async def get_health_score(request: HealthScoreRequest, current_user: str = Depends(auth.get_current_user)):
     """Score a user's financial health using XGBoost + SHAP."""
     try:
         if scorer is None:
@@ -153,7 +222,7 @@ async def get_health_score(request: HealthScoreRequest):
 
 
 @app.post("/api/tax-wizard")
-async def get_tax_comparison(request: TaxWizardRequest):
+async def get_tax_comparison(request: TaxWizardRequest, current_user: str = Depends(auth.get_current_user)):
     """Compare Old vs New tax regime."""
     try:
         from tax_engine import compare_tax_regimes
@@ -165,7 +234,7 @@ async def get_tax_comparison(request: TaxWizardRequest):
 
 
 @app.post("/api/fire-planner")
-async def get_fire_plan(request: FirePlannerRequest):
+async def get_fire_plan(request: FirePlannerRequest, current_user: str = Depends(auth.get_current_user)):
     """Project FIRE corpus growth and milestones."""
     try:
         from fire_engine import compute_fire_plan
