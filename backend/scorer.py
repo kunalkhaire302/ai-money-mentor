@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 import shap
-import pickle
+import joblib
+import hashlib
 from pathlib import Path
 
 
@@ -124,8 +125,22 @@ class FinancialHealthScorer:
         self.classifier = xgb.XGBClassifier()
         self.classifier.load_model(classifier_path)
 
-        with open(metadata_path, 'rb') as f:
-            meta = pickle.load(f)
+        # Integrity Check: SHA-256 verification
+        checksum_path = Path(metadata_path).parent / "model_metadata.sha256"
+        if not checksum_path.exists():
+            raise RuntimeError("🛡️ Security Alert: model_metadata.sha256 checksum file missing!")
+
+        with open(checksum_path, "r") as f:
+            expected_hash = f.read().strip()
+
+        with open(metadata_path, "rb") as f:
+            actual_hash = hashlib.sha256(f.read()).hexdigest()
+
+        if actual_hash != expected_hash:
+            raise RuntimeError(f"🛡️ Security Alert: Metadata integrity compromise! Hash mismatch ({actual_hash[:10]}... vs {expected_hash[:10]}...)")
+
+        # Secure Load via Joblib
+        meta = joblib.load(metadata_path)
         self.label_encoder = meta['label_encoder']
         self.feature_cols = meta['feature_cols']
         self.tier_order = meta['tier_order']

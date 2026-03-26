@@ -6,7 +6,8 @@ Generates synthetic Indian finance data, trains XGBoost models, and saves artifa
 import numpy as np
 import pandas as pd
 import xgboost as xgb
-import pickle
+import joblib
+import hashlib
 from pathlib import Path
 from collections import Counter
 from sklearn.model_selection import train_test_split
@@ -222,23 +223,37 @@ def train_and_save_models():
     # Save artifacts
     reg_path = str(MODEL_DIR / "regressor.json")
     clf_path = str(MODEL_DIR / "classifier.json")
-    meta_path = str(MODEL_DIR / "metadata.pkl")
+    meta_path = str(MODEL_DIR / "metadata.joblib")
+    checksum_path = str(MODEL_DIR / "model_metadata.sha256")
 
+    print(f"📦 Saving regressor to {reg_path}...")
     xgb_reg.save_model(reg_path)
+    print(f"📦 Saving classifier to {clf_path}...")
     xgb_clf.save_model(clf_path)
 
-    with open(meta_path, 'wb') as f:
-        pickle.dump({
-            'label_encoder': le,
-            'feature_cols': FEATURE_COLS,
-            'tier_order': tier_order,
-            'model_metrics': {
-                'regressor_r2': float(r2),
-                'regressor_mae': float(mae),
-                'classifier_roc_auc': float(roc_auc)
-            }
-        }, f)
+    metadata = {
+        'label_encoder': le,
+        'feature_cols': FEATURE_COLS,
+        'tier_order': tier_order,
+        'model_metrics': {
+            'regressor_r2': float(r2),
+            'regressor_mae': float(mae),
+            'classifier_roc_auc': float(roc_auc)
+        }
+    }
+    
+    print(f"📦 Saving metadata to {meta_path}...")
+    joblib.dump(metadata, meta_path)
 
+    # Generate SHA-256 Checksum
+    with open(meta_path, "rb") as f:
+        bytes = f.read()
+        readable_hash = hashlib.sha256(bytes).hexdigest()
+    
+    with open(checksum_path, "w") as f:
+        f.write(readable_hash)
+    
+    print(f"🛡️ Checksum generated: {readable_hash[:10]}...")
     print(f"✅ Models saved to {MODEL_DIR}/")
     return reg_path, clf_path, meta_path
 

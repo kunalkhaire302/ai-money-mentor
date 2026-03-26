@@ -53,7 +53,7 @@ logger = logging.getLogger("ai_money_mentor")
 MODEL_DIR = Path(__file__).parent / "models"
 REG_PATH = str(MODEL_DIR / "regressor.json")
 CLF_PATH = str(MODEL_DIR / "classifier.json")
-META_PATH = str(MODEL_DIR / "metadata.pkl")
+META_PATH = str(MODEL_DIR / "metadata.joblib")
 
 # Global scorer instance
 scorer = None
@@ -131,13 +131,25 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    return response
 
 
 # ─── Pydantic Models ────────────────────────────────────────────────────────────
