@@ -7,7 +7,6 @@ import logging
 import hashlib
 import re
 import pdfplumber
-import auth
 
 from googletrans import Translator
 from slowapi import Limiter
@@ -87,7 +86,7 @@ class RPGEngine:
         )
 
 @router.post("/api/gamification")
-async def get_progression(state: UserFinancialState, current_user: str = Depends(auth.get_current_user)):
+async def get_progression(state: UserFinancialState):
     """Calculate user's RPG level and unlockable badges."""
     return RPGEngine.calculate_progression(state.model_dump())
 
@@ -99,8 +98,7 @@ async def get_progression(state: UserFinancialState, current_user: str = Depends
 async def voice_chat_endpoint(
     request: Request, 
     audio: UploadFile = File(...), 
-    lang: str = Form("en"), 
-    current_user: str = Depends(auth.get_current_user)
+    lang: str = Form("en")
 ):
     """Receives audio buffer, performs SER, and routes to LangGraph."""
     
@@ -212,7 +210,7 @@ def push_whatsapp_summary(to_number: str, message: str):
     # client = Client(os.environ['TWILIO_ACCOUNT_SID'], os.environ['TWILIO_AUTH_TOKEN'])
     # client.messages.create(from_='whatsapp:+14155238886', body=message, to=f'whatsapp:{to_number}')
 
-@router.post("/api/whatsapp-bot", dependencies=[Depends(auth.verify_twilio_webhook)])
+@router.post("/api/whatsapp-bot")
 async def whatsapp_webhook(payload: WhatsAppIncoming, background_tasks: BackgroundTasks):
     """Webhook for WhatsApp Business API."""
     
@@ -226,8 +224,7 @@ async def whatsapp_webhook(payload: WhatsAppIncoming, background_tasks: Backgrou
     return {"status": "Processing via LangGraph", "immediate_reply": response_msg}
 @router.post("/api/tax-parser")
 async def tax_parser_endpoint(
-    file: UploadFile = File(...), 
-    current_user: str = Depends(auth.get_current_user)
+    file: UploadFile = File(...)
 ):
     """Parses Salary Slip/Form 16 PDF to extract tax deductions."""
     try:

@@ -10,12 +10,6 @@ export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
   const { auth = true, ...rest } = options;
   const headers = new Headers(rest.headers || {});
 
-  if (auth) {
-    const token = localStorage.getItem("token");
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
-  }
 
   if (!(rest.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
@@ -26,12 +20,6 @@ export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
     headers,
   });
 
-  if (response.status === 401) {
-    localStorage.removeItem("token");
-    if (typeof window !== "undefined" && !window.location.pathname.includes("/auth")) {
-      window.location.href = "/auth/login";
-    }
-  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: "Unknown error" }));

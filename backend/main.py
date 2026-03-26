@@ -12,7 +12,6 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, model_validator
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -23,8 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from database import engine, Base, get_db
-from models_db import UserDB
-import auth
 import reports
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -138,43 +135,7 @@ async def add_security_headers(request: Request, call_next):
 from advanced import router as advanced_router
 app.include_router(advanced_router)
 
-# ─── Auth Endpoints ──────────────────────────────────────────────────────────────
 
-@app.post("/auth/register")
-async def register_user(user_data: dict, db: AsyncSession = Depends(get_db)):
-    username = user_data.get("username")
-    password = user_data.get("password")
-    if not username or not password:
-        raise HTTPException(status_code=400, detail="Username and password required")
-        
-    query = select(UserDB).where(UserDB.username == username)
-    result = await db.execute(query)
-    if result.scalars().first():
-        raise HTTPException(status_code=400, detail="Username already registered")
-        
-    hashed_password = auth.get_password_hash(password)
-    new_user = UserDB(username=username, hashed_password=hashed_password)
-    db.add(new_user)
-    await db.commit()
-    await db.refresh(new_user)
-    
-    return {"message": "User registered successfully"}
-
-@app.post("/auth/token")
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
-    query = select(UserDB).where(UserDB.username == form_data.username)
-    result = await db.execute(query)
-    user = result.scalars().first()
-    
-    if not user or not auth.verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-        
-    access_token = auth.create_access_token(data={"sub": user.username})
-    return {"access_token": access_token, "token_type": "bearer"}
 
 class FinancialProfileInput(BaseModel):
     age: int = Field(..., ge=18, le=75)
@@ -256,7 +217,7 @@ async def root():
 
 @app.post("/api/health-score")
 @limiter.limit("10/minute")
-async def get_health_score(request: Request, profile: FinancialProfileInput, current_user: str = Depends(auth.get_current_user)):
+async def get_health_score(request: Request, profile: FinancialProfileInput):
     """Score a user's financial health using XGBoost + SHAP."""
     try:
         if scorer is None:
@@ -270,7 +231,7 @@ async def get_health_score(request: Request, profile: FinancialProfileInput, cur
 
 
 @app.post("/api/tax-wizard")
-async def get_tax_comparison(request: TaxWizardRequest, current_user: str = Depends(auth.get_current_user)):
+async def get_tax_comparison(request: TaxWizardRequest):
     """Compare Old vs New tax regime."""
     try:
         from tax_engine import compare_tax_regimes
@@ -282,7 +243,7 @@ async def get_tax_comparison(request: TaxWizardRequest, current_user: str = Depe
 
 
 @app.post("/api/fire-planner")
-async def get_fire_plan(request: FirePlannerRequest, current_user: str = Depends(auth.get_current_user)):
+async def get_fire_plan(request: FirePlannerRequest):
     """Project FIRE corpus growth and milestones."""
     try:
         from fire_engine import compute_fire_plan

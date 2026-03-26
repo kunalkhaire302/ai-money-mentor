@@ -79,13 +79,6 @@ export default function Dashboard() {
   const router = useRouter();
 
   useEffect(() => {
-    // Check for token
-    const token = localStorage.getItem("token");
-    if (!token) {
-      router.push("/auth/login");
-      return;
-    }
-
     // Fetch user progression
     apiFetch("/api/gamification", {
       method: "POST",
