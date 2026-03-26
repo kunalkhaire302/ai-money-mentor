@@ -2,12 +2,14 @@
 
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, Square, Loader2, Volume2, ShieldAlert } from "lucide-react";
+import { Mic, Square, Loader2, Volume2, ShieldAlert, Globe } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 
 export default function VoiceMentor() {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [response, setResponse] = useState<any>(null);
+  const [language, setLanguage] = useState("en");
   
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks = useRef<Blob[]>([]);
@@ -45,13 +47,13 @@ export default function VoiceMentor() {
     const audioBlob = new Blob(audioChunks.current, { type: "audio/webm" });
     const formData = new FormData();
     formData.append("audio", audioBlob, "voice_query.webm");
+    formData.append("lang", language);
 
     try {
-      const res = await fetch("https://ai-money-mentor-n5kt.onrender.com/api/voice-chat", {
+      const data = await apiFetch("/api/voice-chat", {
         method: "POST",
         body: formData,
       });
-      const data = await res.json();
       setResponse(data);
     } catch (error) {
       console.error("Voice processing failed:", error);
@@ -63,8 +65,32 @@ export default function VoiceMentor() {
   return (
     <div className="glass-card p-6 border border-border mt-8 flex flex-col items-center">
       <h3 className="text-lg font-bold text-text-primary mb-2">Speak to your AI Mentor</h3>
+      
+      {/* Language Selector */}
+      <div className="flex items-center gap-2 mb-4 bg-bg-secondary p-1 rounded-lg border border-border">
+        {[
+          { id: "en", label: "English" },
+          { id: "hi", label: "हिंदी" },
+          { id: "mr", label: "मराठी" }
+        ].map((l) => (
+          <button
+            key={l.id}
+            onClick={() => setLanguage(l.id)}
+            className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${
+              language === l.id 
+                ? "bg-accent-emerald text-white shadow-sm" 
+                : "text-text-muted hover:text-text-primary"
+            }`}
+          >
+            {l.label}
+          </button>
+        ))}
+      </div>
+
       <p className="text-sm text-text-muted mb-6 text-center max-w-md">
-        Hold the mic to ask questions about your portfolio, SIPs, or tax planning. Our agent will analyze your tone and respond accordingly.
+        Hold the mic to ask questions about your portfolio, SIPs, or tax planning in <span className="text-accent-emerald font-bold">{
+          language === "en" ? "English" : language === "hi" ? "Hindi" : "Marathi"
+        }</span>. Our agent will analyze your tone and respond accordingly.
       </p>
 
       {/* Mic Button */}

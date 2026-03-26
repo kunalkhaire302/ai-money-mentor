@@ -3,11 +3,17 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 import random
 import logging
+import hashlib
+import re
+import pdfplumber
 import auth
 
+from googletrans import Translator
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 limiter = Limiter(key_func=get_remote_address)
+
+translator = Translator()
 
 logger = logging.getLogger("ai_money_mentor.advanced")
 router = APIRouter()
@@ -56,6 +62,17 @@ class RPGEngine:
             xp += 150
             badges.append("💳 Credit Master")
 
+        # New: Wealth Creator (SIP > 20% of Income)
+        monthly_income = state.get("monthly_income", 1)
+        if state.get("monthly_sip", 0) / (monthly_income if monthly_income > 0 else 1) > 0.2:
+            xp += 400
+            badges.append("🚀 Wealth Creator")
+
+        # New: Tax Ninja (Multiple deductions)
+        if state.get("section_80c", 0) > 100000 and state.get("section_80d", 0) > 20000:
+            xp += 300
+            badges.append("🥷 Tax Ninja")
+
         # Level calculation (e.g., 1000 XP per level)
         level = (xp // 1000) + 1
         xp_to_next = 1000 - (xp % 1000)
@@ -78,7 +95,12 @@ async def get_progression(state: UserFinancialState, current_user: str = Depends
 
 @router.post("/api/voice-chat")
 @limiter.limit("5/minute")
-async def voice_chat_endpoint(request: Request, audio: UploadFile = File(...), current_user: str = Depends(auth.get_current_user)):
+async def voice_chat_endpoint(
+    request: Request, 
+    audio: UploadFile = File(...), 
+    lang: str = Form("en"), 
+    current_user: str = Depends(auth.get_current_user)
+):
     """Receives audio buffer, performs SER, and routes to LangGraph."""
     
     # 1. Mock Deep Learning SER Pipeline
@@ -95,20 +117,47 @@ async def voice_chat_endpoint(request: Request, audio: UploadFile = File(...), c
         k=1
     )[0]
     
-    # 2. Mock Speech-to-Text
-    transcription = f"Audio received ({file_size_kb}kb). Mock query about debt or planning."
+    # 2. Mock Speech-to-Text (Simulated Native Language Input)
+    # For a real implementation, we'd use OpenAI Whisper or Google Speech-to-Text
+    native_transcription = {
+        "hi": "मुझे कर्ज मुक्त होने के लिए क्या करना चाहिए?", # Hindi
+        "mr": "माझे कर्ज कसे कमी करावे?", # Marathi
+        "en": "How can I reduce my debt burden?" # English
+    }.get(lang, "How can I reduce my debt burden?")
+
+    # 3. Translate to English for ML/LLM Processing
+    english_query = native_transcription
+    if lang != "en":
+        try:
+            translation = translator.translate(native_transcription, dest="en")
+            english_query = translation.text
+        except Exception as e:
+            logger.error(f"Translation error: {e}")
     
-    # 3. LangGraph Routing Instruction
-    routing_flag = "empathetic_support" if emotion_state in ["stressed", "hesitant"] else "standard_analytical"
-    
-    logger.info(f"🎤 Voice received. Emotion: {emotion_state}. Routing: {routing_flag}")
+    # 4. LangGraph/LLM Logic (Simulated)
+    # This would normally call your LangGraph workflow
+    ai_response_en = (
+        "Based on your profile, your Debt-to-Income ratio is 45%. "
+        "I recommend prioritizing the personal loan with 14% interest first. "
+        "Try the avalanche method to save ₹12,000 in interest."
+    )
+
+    # 5. Translate Back to User's Native Language
+    final_output = ai_response_en
+    if lang != "en":
+        try:
+            final_output = translator.translate(ai_response_en, dest=lang).text
+        except Exception as e:
+            logger.error(f"Back-translation error: {e}")
 
     return {
-        "transcription": transcription,
+        "status": "success",
         "emotion_detected": emotion_state,
-        "langgraph_routing_flag": routing_flag,
-        "ai_response": "I hear your concern. Taking on debt can feel overwhelming, but we can structure a highly efficient payoff plan together. Let's look at the numbers.",
-        "reply_audio_url": None # Mock TTS output
+        "langgraph_routing_flag": "empathetic_support" if emotion_state in ["stressed", "hesitant"] else "standard_advice",
+        "transcription": native_transcription,
+        "english_query": english_query,
+        "ai_response": final_output,
+        "language_used": lang
     }
 
 
@@ -128,19 +177,26 @@ class AccountAggregatorPayload(BaseModel):
     FI_data: List[BankTransaction]
     
 @router.post("/api/aa-webhook")
-async def account_aggregator_webhook(payload: AccountAggregatorPayload):
+async def account_aggregator_webhook(payload: AccountAggregatorPayload, background_tasks: BackgroundTasks):
     """
     Ingests live bank transactions from India Stack AA (e.g. Setu/Sahamati).
     Triggers LangGraph active monitoring.
     """
-    # LangGraph passive alert logic here
+    # 1. Budget Anomaly Detection (Simulated)
     food_expenses = sum(t.amount for t in payload.FI_data if t.category == "Food" and t.type == "DEBIT")
-    alert = None
     
+    # 2. Trigger Proactive WhatsApp Alert via Twilio
     if food_expenses > 10000:
-        alert = "Alert: Your dining/delivery expenses spiked this month."
+        alert_msg = (
+            f"🔔 *AI Money Mentor Alert*: Your 'Food & Dining' expenses spiked to ₹{food_expenses:,.0f} "
+            "this month. This is 45% higher than your average. Type 'Optimize' to reroute your budget."
+        )
+        # In production, we'd lookup user's phone from DB
+        demo_phone = os.getenv("DEMO_WHATSAPP_PHONE", "+919876543210")
+        background_tasks.add_task(push_whatsapp_summary, demo_phone, alert_msg)
+        return {"status": "ingested", "anomaly_detected": True, "alert_sent": True}
         
-    return {"status": "ingested", "proactive_alerts_generated": [alert] if alert else []}
+    return {"status": "ingested", "anomaly_detected": False}
 
 
 class WhatsAppIncoming(BaseModel):
@@ -148,9 +204,12 @@ class WhatsAppIncoming(BaseModel):
     message_body: str
     profile_name: str
 
-def push_whatsapp_summary(user_id: str, message: str):
-    """Simulates Celery background task pushing message to Twilio/Meta API."""
-    logger.info(f"📱 [WhatsApp to {user_id}]: {message}")
+def push_whatsapp_summary(to_number: str, message: str):
+    """Simulates real Twilio/Meta API push."""
+    logger.info(f"📱 [WhatsApp to {to_number}]: {message}")
+    # Implementation logic (e.g. Twilio Client)
+    # client = Client(os.environ['TWILIO_ACCOUNT_SID'], os.environ['TWILIO_AUTH_TOKEN'])
+    # client.messages.create(from_='whatsapp:+14155238886', body=message, to=f'whatsapp:{to_number}')
 
 @router.post("/api/whatsapp-bot", dependencies=[Depends(auth.verify_twilio_webhook)])
 async def whatsapp_webhook(payload: WhatsAppIncoming, background_tasks: BackgroundTasks):
@@ -164,3 +223,50 @@ async def whatsapp_webhook(payload: WhatsAppIncoming, background_tasks: Backgrou
     background_tasks.add_task(push_whatsapp_summary, payload.from_number, market_summary)
     
     return {"status": "Processing via LangGraph", "immediate_reply": response_msg}
+@router.post("/api/tax-parser")
+async def tax_parser_endpoint(
+    file: UploadFile = File(...), 
+    current_user: str = Depends(auth.get_current_user)
+):
+    """Parses Salary Slip/Form 16 PDF to extract tax deductions."""
+    try:
+        with pdfplumber.open(file.file) as pdf:
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+        
+        # Regex patterns for common Indian tax deductions
+        deductions = {
+            "80C": 0.0,
+            "80D": 0.0,
+            "NPS": 0.0,
+            "HRA": 0.0,
+            "Basic_Salary": 0.0
+        }
+        
+        # 80C search (PF, LIC, ELSS)
+        sec_80c = re.search(r"80C.*?(\d{3,7})", text, re.IGNORECASE)
+        if sec_80c: deductions["80C"] = float(sec_80c.group(1))
+        
+        # 80D search (Health Insurance)
+        sec_80d = re.search(r"80D.*?(\d{3,6})", text, re.IGNORECASE)
+        if sec_80d: deductions["80D"] = float(sec_80d.group(1))
+        
+        # NPS (80CCD)
+        nps = re.search(r"(NPS|80CCD).*?(\d{3,6})", text, re.IGNORECASE)
+        if nps: deductions["NPS"] = float(nps.group(2))
+        
+        # HRA
+        hra = re.search(r"HRA.*?(\d{3,7})", text, re.IGNORECASE)
+        if hra: deductions["HRA"] = float(hra.group(1))
+
+        # Basic Salary
+        basic = re.search(r"(Basic|Salary).*?(\d{4,8})", text, re.IGNORECASE)
+        if basic: deductions["Basic_Salary"] = float(basic.group(2))
+
+        return {
+            "status": "success",
+            "extracted_deductions": deductions,
+            "raw_text_preview": text[:200] + "..." if len(text) > 200 else text
+        }
+    except Exception as e:
+        logger.error(f"PDF Parsing Error: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")

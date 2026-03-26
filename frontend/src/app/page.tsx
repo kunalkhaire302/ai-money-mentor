@@ -63,6 +63,8 @@ const item = {
 };
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/api";
 import GamificationDashboard from "@/components/GamificationDashboard";
 import VoiceMentor from "@/components/VoiceMentor";
 
@@ -74,11 +76,19 @@ export default function Dashboard() {
     badges: [],
   });
 
+  const router = useRouter();
+
   useEffect(() => {
-    // Fetch mock user progression on load
-    fetch("https://ai-money-mentor-n5kt.onrender.com/api/gamification", {
+    // Check for token
+    const token = localStorage.getItem("token");
+    if (!token) {
+      router.push("/auth/login");
+      return;
+    }
+
+    // Fetch user progression
+    apiFetch("/api/gamification", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         emergency_fund_months: 6,
         sip_streak_months: 14,
@@ -88,10 +98,6 @@ export default function Dashboard() {
         debt_to_income_ratio: 0.2,
       }),
     })
-      .then((res) => {
-        if (!res.ok) throw new Error("API Route failed");
-        return res.json();
-      })
       .then((data) => {
         setProgression({
           level: data.level || 1,
@@ -100,8 +106,10 @@ export default function Dashboard() {
           badges: data.badges_unlocked || [],
         });
       })
-      .catch((err) => console.error("Failed to fetch progression:", err));
-  }, []);
+      .catch((err) => {
+        console.error("Failed to fetch progression:", err);
+      });
+  }, [router]);
 
   return (
     <div className="pt-20 pb-12 px-6">

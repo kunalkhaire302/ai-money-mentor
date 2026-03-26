@@ -14,3 +14,7 @@ SQLAlchemy>=2.0.0
 aiosqlite>=0.20.0
 slowapi>=0.1.9
 joblib==1.4.2
+googletrans==4.0.0-rc1
+pdfplumber>=0.11.0
+APScheduler==3.10.4
+reportlab==4.2.0

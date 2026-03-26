@@ -22,7 +22,11 @@ import {
   CheckCircle2,
   XCircle,
   Lightbulb,
+  Info,
 } from "lucide-react";
+import { apiFetch } from "@/lib/api";
+import WhatIfSimulator from "@/components/WhatIfSimulator";
+import BadgeUnlock from "@/components/BadgeUnlock";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://ai-money-mentor-n5kt.onrender.com";
 
@@ -68,6 +72,8 @@ export default function HealthScorePage() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<HealthResult | null>(null);
+  const [rewards, setRewards] = useState<string[]>([]);
+  const [showRewards, setShowRewards] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
@@ -107,15 +113,26 @@ export default function HealthScorePage() {
     setError(null);
     try {
       const monthly_income = form.annual_income_lpa * 100000 / 12;
-      const res = await fetch(`${API_BASE}/api/health-score`, {
+      const data = await apiFetch("/api/health-score", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, monthly_income }),
       });
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-      const data = await res.json();
       setResult(data);
-    } catch (err: unknown) {
+
+      // Fetch Gamification / Badges
+      try {
+        const rewardsData = await apiFetch("/api/gamification", {
+          method: "POST",
+          body: JSON.stringify(data), // Pass the score result for badge checking
+        });
+        if (rewardsData.badges && rewardsData.badges.length > 0) {
+          setRewards(rewardsData.badges);
+          setShowRewards(true);
+        }
+      } catch (err) {
+        console.error("Failed to fetch badges:", err);
+      }
+    } catch (err: any) {
       const message = err instanceof Error ? err.message : "Unknown error";
       setError(`Failed to get health score. Make sure the backend is running. (${message})`);
     } finally {
@@ -132,7 +149,19 @@ export default function HealthScorePage() {
     : [];
 
   if (result && !loading) {
-    return <ResultView result={result} radarData={radarData} onReset={() => setResult(null)} />;
+    return (
+      <>
+        <ResultView result={result} radarData={radarData} form={form} onReset={() => setResult(null)} />
+        <AnimatePresence>
+          {showRewards && (
+            <BadgeUnlock 
+              badges={rewards} 
+              onClose={() => setShowRewards(false)} 
+            />
+          )}
+        </AnimatePresence>
+      </>
+    );
   }
 
   return (
@@ -521,10 +550,12 @@ function ToggleField({
 function ResultView({
   result,
   radarData,
+  form,
   onReset,
 }: {
   result: HealthResult;
   radarData: { dimension: string; score: number; fullMark: number }[];
+  form: any;
   onReset: () => void;
 }) {
   const tierClass = `tier-${result.tier.toLowerCase()}`;
@@ -616,6 +647,12 @@ function ResultView({
               </RadarChart>
             </ResponsiveContainer>
           </motion.div>
+
+          {/* What-If Simulator Integration */}
+          <div className="lg:col-span-2">
+            <WhatIfSimulator initialForm={form} currentScore={result.score} />
+          </div>
+
 
           {/* SHAP Factors */}
           <motion.div

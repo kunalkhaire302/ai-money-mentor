@@ -25,6 +25,9 @@ from sqlalchemy.future import select
 from database import engine, Base, get_db
 from models_db import UserDB
 import auth
+import reports
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # Load environment variables
 load_dotenv()
@@ -58,6 +61,14 @@ META_PATH = str(MODEL_DIR / "metadata.joblib")
 # Global scorer instance
 scorer = None
 
+# --- Scheduler Setup ---
+scheduler = AsyncIOScheduler()
+
+async def weekly_report_task():
+    """Triggered every Sunday 8 AM to process user reports."""
+    logger.info("📅 [CRON] Starting weekly PDF report generation for all users...")
+    # Mocked iteration
+    # reports.generate_weekly_report("demo_user", {"score": 750, "tier": "Gold"}, "reports/weekly_summary.pdf")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -76,7 +87,17 @@ async def lifespan(app: FastAPI):
     logger.info("📦 Loading FinancialHealthScorer...")
     from scorer import FinancialHealthScorer
     scorer = FinancialHealthScorer(REG_PATH, CLF_PATH, META_PATH)
-    logger.info("✅ Scorer loaded. API is ready!")# ─── Auth Endpoints ──────────────────────────────────────────────────────────────
+    logger.info("✅ Scorer loaded. API is ready!")
+    
+    # Start Scheduler
+    scheduler.add_job(weekly_report_task, CronTrigger(day_of_week='sun', hour=8, minute=0))
+    scheduler.start()
+    logger.info("⏰ APScheduler started (Sunday 8 AM job configured).")
+    
+    yield
+    # Shutdown
+    scheduler.shutdown()
+    logger.info("⏰ APScheduler shutdown clean.")
 
 @app.post("/auth/register")
 async def register_user(user_data: dict, db: AsyncSession = Depends(get_db)):

@@ -20,7 +20,10 @@ import {
   CheckCircle2,
   TrendingDown,
   XCircle,
+  FileText,
 } from "lucide-react";
+import { apiFetch } from "@/lib/api";
+import SalarySlipParser from "@/components/SalarySlipParser";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://ai-money-mentor-n5kt.onrender.com";
 
@@ -81,23 +84,28 @@ export default function TaxWizardPage() {
   };
 
   const handleSubmit = async () => {
-    setLoading(true);
-    setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/tax-wizard`, {
+      const data = await apiFetch("/api/tax-wizard", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-      const data = await res.json();
       setResult(data);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      setError(`Failed to compute tax. Make sure the backend is running. (${message})`);
+    } catch (err: any) {
+      setError(`Failed to compute tax. (${err.message})`);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleParsed = (deductions: any) => {
+    setForm(prev => ({
+      ...prev,
+      gross_income: deductions.Basic_Salary ? deductions.Basic_Salary * 12 * 2 : prev.gross_income, // Assume CTC ~2x basic
+      section_80c: Math.min(150000, deductions["80C"] || prev.section_80c),
+      section_80d: Math.min(75000, deductions["80D"] || prev.section_80d),
+      nps_80ccd: Math.min(50000, deductions["NPS"] || prev.nps_80ccd),
+      hra_exemption: deductions["HRA"] || prev.hra_exemption,
+    }));
   };
 
   const chartData = result
@@ -136,9 +144,12 @@ export default function TaxWizardPage() {
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="glass-card p-6"
+            className="lg:col-span-1"
           >
-            <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
+            <SalarySlipParser onParsed={handleParsed} />
+            
+            <div className="glass-card p-6">
+              <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
               <IndianRupee className="w-5 h-5" style={{ color: "var(--color-emerald-primary)" }} />
               Income & Deductions
             </h2>
@@ -250,11 +261,10 @@ export default function TaxWizardPage() {
                   border: "1px solid rgba(239, 68, 68, 0.3)",
                 }}
               >
-                <XCircle className="w-4 h-4 text-red-400 mt-0.5" />
-                <p className="text-xs text-red-300">{error}</p>
               </div>
             )}
-          </motion.div>
+          </div>
+        </motion.div>
 
           {/* Results */}
           <div className="space-y-6">
