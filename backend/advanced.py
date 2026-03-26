@@ -5,6 +5,10 @@ import random
 import logging
 import auth
 
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+limiter = Limiter(key_func=get_remote_address)
+
 logger = logging.getLogger("ai_money_mentor.advanced")
 router = APIRouter()
 
@@ -73,7 +77,8 @@ async def get_progression(state: UserFinancialState, current_user: str = Depends
 # ─── 2. Voice-Driven Conversational Mentor (Speech Emotion Recognition) ────────
 
 @router.post("/api/voice-chat")
-async def voice_chat_endpoint(audio: UploadFile = File(...), current_user: str = Depends(auth.get_current_user)):
+@limiter.limit("5/minute")
+async def voice_chat_endpoint(request: Request, audio: UploadFile = File(...), current_user: str = Depends(auth.get_current_user)):
     """Receives audio buffer, performs SER, and routes to LangGraph."""
     
     # 1. Mock Deep Learning SER Pipeline

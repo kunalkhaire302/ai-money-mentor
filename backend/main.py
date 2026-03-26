@@ -10,10 +10,14 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, status
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -122,6 +126,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate Limiter Initialization
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -139,33 +148,43 @@ app.include_router(advanced_router)
 from advanced import router as advanced_router
 app.include_router(advanced_router)
 
-class HealthScoreRequest(BaseModel):
-    age: int = Field(30, ge=18, le=70)
-    annual_income_lpa: float = Field(8, ge=1, le=200)
-    monthly_income: Optional[float] = None
-    monthly_expenses: Optional[float] = None
-    emergency_fund_months: float = Field(3, ge=0, le=36)
+class FinancialProfileInput(BaseModel):
+    age: int = Field(..., ge=18, le=75)
+    annual_income_lpa: float = Field(..., ge=1.0, le=500.0)
+    monthly_income: float = Field(..., ge=0)
+    monthly_expenses: float = Field(..., ge=0)
+    savings_rate: float = Field(0.0, ge=0.0, le=1.0)
+    emergency_fund_months: float = Field(..., ge=0, le=36)
+    debt_to_income_ratio: float = Field(..., ge=0.0, le=1.0)
+    credit_utilisation: float = Field(..., ge=0.0, le=1.0)
+    
     has_home_loan: bool = False
     has_car_loan: bool = False
     has_personal_loan: bool = False
     has_credit_card_debt: bool = False
-    debt_to_income_ratio: float = Field(0.0, ge=0, le=1)
-    credit_utilisation: float = Field(0.0, ge=0, le=1)
     has_term_insurance: bool = False
-    term_cover_multiple: float = Field(0, ge=0, le=50)
     has_health_insurance: bool = False
-    health_cover_lakhs: float = Field(0, ge=0, le=100)
     invests_in_mf: bool = False
     invests_in_stocks: bool = False
     invests_in_fd: bool = False
     invests_in_ppf_nps: bool = False
     invests_in_gold: bool = False
-    total_portfolio_value: float = Field(0, ge=0)
-    monthly_sip: float = Field(0, ge=0)
-    equity_allocation_pct: float = Field(40, ge=0, le=100)
     has_epf: bool = False
-    epf_corpus: float = Field(0, ge=0)
-    retirement_corpus_pct: float = Field(0.1, ge=0, le=5)
+    
+    monthly_sip: float = Field(0.0, ge=0)
+    total_portfolio_value: float = Field(0.0, ge=0)
+    equity_allocation_pct: float = Field(0.0, ge=0, le=100)
+    
+    term_cover_multiple: float = Field(0.0, ge=0)
+    health_cover_lakhs: float = Field(0.0, ge=0)
+    epf_corpus: float = Field(0.0, ge=0)
+    retirement_corpus_pct: float = Field(0.0, ge=0)
+
+    @model_validator(mode="after")
+    def check_expenses(self):
+        if self.monthly_expenses > self.monthly_income * 1.5:
+            raise ValueError("monthly_expenses cannot exceed 1.5x of monthly_income (extreme debt trap protection)")
+        return self
 
 
 class TaxWizardRequest(BaseModel):
@@ -208,13 +227,14 @@ async def root():
 
 
 @app.post("/api/health-score")
-async def get_health_score(request: HealthScoreRequest, current_user: str = Depends(auth.get_current_user)):
+@limiter.limit("10/minute")
+async def get_health_score(request: Request, profile: FinancialProfileInput, current_user: str = Depends(auth.get_current_user)):
     """Score a user's financial health using XGBoost + SHAP."""
     try:
         if scorer is None:
             raise HTTPException(status_code=503, detail="Model not loaded yet. Please wait.")
         
-        result = scorer.score(request.model_dump())
+        result = scorer.score(profile.model_dump())
         return result
     except Exception as e:
         logger.error(f"Health score error: {e}")
